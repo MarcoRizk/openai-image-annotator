@@ -14,10 +14,12 @@ export OPENAI_API_KEY="sk-…"
 ```python
 # schemas.py
 from pydantic import BaseModel
-class PersonAttributes(BaseModel):
-    has_face: bool
-    estimated_age: int | None
-    clothing_color: str | None
+class Output(BaseModel):
+    description: str = Field(...,
+                                    description="A detailed description of what is happening in the image")
+    is_outdoor: bool = Field(..., description="Whether the the scene is outdoor or indoor")
+    people_count: int = Field(..., description="The number of people who are involved in this scene")
+
 ```
 
 ```python
@@ -28,9 +30,7 @@ from schemas import PersonAttributes
 ann = GPTBatchAnnotator("images/", PersonAttributes, output_folder="labels", model="gpt-4o-mini", batch_size=500)
 ann.create_batch_files()   # writes labels/batches/*.jsonl
 ann.upload_batches()       # submits to OpenAI
-# …later…
-ann.get_status()
-ann.retrieve_results()     # writes results/, errors/
+ann.wait_for_results_and_retrieve()     # writes results/, errors/
 ann.extract_labels()       # writes labels/labels/<image>.json
 ```
 

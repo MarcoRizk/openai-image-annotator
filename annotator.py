@@ -3,10 +3,24 @@ from __future__ import annotations
 import base64
 import json
 import os
-from openai import OpenAI
+from enum import Enum
 from pathlib import Path
+from time import sleep
+from typing import Any, Dict, List, Sequence, Type
+
+from openai import OpenAI
 from pydantic import BaseModel
-from typing import Any, Dict, Iterable, List, Sequence, Type, Union
+
+
+class BatchStatus(Enum):
+    VALIDATING = "validating"  # The batch is being validated
+    FAILED = "failed"  # Validation failed
+    IN_PROGRESS = "in_progress"  # Batch is currently running
+    FINALIZING = "finalizing"  # Execution finished, results being finalized
+    COMPLETED = "completed"  # Batch finished successfully
+    EXPIRED = "expired"  # Batch expired before completion
+    CANCELLING = "cancelling"  # A cancellation request is in progress
+    CANCELLED = "cancelled"  # Batch was cancelled
 
 
 class GPTBatchAnnotator:
@@ -176,7 +190,7 @@ class GPTBatchAnnotator:
             print(f"Batch file created: {batch_path} ({len(batch)} images)")
 
     @staticmethod
-    def _encode_image_base64(image_path: PathLike) -> str:
+    def _encode_image_base64(image_path: str) -> str:
         """Return the base64-encoded contents of an image file."""
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode("utf-8")
@@ -247,7 +261,7 @@ class GPTBatchAnnotator:
 
         return [list(file_list[i: i + chunk_size]) for i in range(0, len(file_list), chunk_size)]
 
-    def upload_batch(self, batch_path: PathLike) -> None:
+    def upload_batch(self, batch_path: str) -> None:
         """
         Upload a single `.jsonl` batch payload to the OpenAI Batch API.
         """
@@ -273,7 +287,7 @@ class GPTBatchAnnotator:
         for batch in batches:
             self.upload_batch(batch)
 
-    def get_status(self) -> None:
+    def get_status(self) -> dict:
         """
         Print status lines for all local batch payloads if they exist in OpenAI's batch list.
         """
@@ -286,15 +300,17 @@ class GPTBatchAnnotator:
             for batch in self.client.batches.list(limit=100).data
             if "batch_name" in batch.metadata
         }
-
+        status = {}
         for batch_path in local_batches:
             if batch_path.name in open_ai_batches:
                 batch = open_ai_batches[batch_path.name]
                 print(
                     f"Id {batch.id} -- {batch.status} -- {batch.metadata} -- Outfile: {batch.output_file_id}"
                 )
+                status[batch.id] = batch.status
             else:
                 print(f"Couldn't find batch {batch_path} in open ai processed batches")
+        return status
 
     def retrieve_results(self) -> None:
         """
@@ -330,6 +346,19 @@ class GPTBatchAnnotator:
                 file_response.write_to_file(f"{self.errors_folder / file_name}.txt")
                 print(f"Saved Error for batch {batch_path}")
 
+    def wait_for_results_and_retrieve(self):
+        finished = False
+        while not finished:
+            statuses = self.get_status()
+            batches_finished = [True if status in [BatchStatus.FAILED.value, BatchStatus.COMPLETED.value, BatchStatus.EXPIRED.value,
+                                           BatchStatus.CANCELLED.value] else False for status in statuses.values()]
+            if all(batches_finished):
+                finished = True
+            else:
+                sleep(30)
+
+        self.retrieve_results()
+
     def extract_labels(self) -> None:
         """
         Parse downloaded batch result files and persist per-image JSON outputs into `labels_folder`.
@@ -339,7 +368,7 @@ class GPTBatchAnnotator:
             self._save_parsed_content(result_file, self.labels_folder)
 
     @staticmethod
-    def _get_filename(file_path: PathLike) -> str:
+    def _get_filename(file_path: str) -> str:
         """
         Return the filename (with extension) from a path.
         """
@@ -351,7 +380,7 @@ class GPTBatchAnnotator:
         return os.path.splitext(file_name)[0]
 
     @staticmethod
-    def _save_parsed_content(input_file: PathLike, output_dir: PathLike) -> None:
+    def _save_parsed_content(input_file: str, output_dir: str) -> None:
         """
         Read a batch results file (newline-delimited JSON) and write each parsed,
         schema-conformant content blob into `output_dir/<image_basename>.json`.
