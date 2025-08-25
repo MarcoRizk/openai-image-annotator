@@ -3,14 +3,10 @@ from __future__ import annotations
 import base64
 import json
 import os
-from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence, Type, Union
-
-from pydantic import BaseModel
 from openai import OpenAI
-
-
-PathLike = Union[str, os.PathLike[str]]
+from pathlib import Path
+from pydantic import BaseModel
+from typing import Any, Dict, Iterable, List, Sequence, Type, Union
 
 
 class GPTBatchAnnotator:
@@ -82,13 +78,13 @@ class GPTBatchAnnotator:
     errors_folder: Path
 
     def __init__(
-        self,
-        input_folder: PathLike,
-        output_schema: Type[BaseModel],
-        output_folder: PathLike = "labels",
-        model: str = "gpt-4o-mini",
-        batch_size: int = 1000,
-        batch_base_name: str = "batch",
+            self,
+            input_folder: str,
+            output_schema: Type[BaseModel],
+            output_folder: str = "labels",
+            model: str = "gpt-4o-mini",
+            batch_size: int = 1000,
+            batch_base_name: str = "batch",
     ) -> None:
         self.model = model
         self.batch_size = batch_size
@@ -249,7 +245,7 @@ class GPTBatchAnnotator:
         if chunk_size <= 0:
             raise ValueError("chunk_size must be greater than 0")
 
-        return [list(file_list[i : i + chunk_size]) for i in range(0, len(file_list), chunk_size)]
+        return [list(file_list[i: i + chunk_size]) for i in range(0, len(file_list), chunk_size)]
 
     def upload_batch(self, batch_path: PathLike) -> None:
         """
